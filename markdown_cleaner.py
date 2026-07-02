@@ -11,6 +11,8 @@ from slugify import slugify
 
 REMOVE_SELECTORS = ("script", "style", "nav", "header", "footer", "form")
 WHITESPACE_RE = re.compile(r"\n{3,}")
+KEYWORD_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+STOP_WORDS = {"a", "an", "and", "for", "how", "in", "of", "on", "the", "to", "with"}
 
 
 @dataclass
@@ -63,6 +65,18 @@ def build_frontmatter(article_id: int, title: str, updated_at: str, article_url:
     )
 
 
+def build_keywords(title: str) -> str:
+    keywords: list[str] = []
+    seen: set[str] = set()
+    for token in KEYWORD_SPLIT_RE.split(title.lower()):
+        keyword = token.strip()
+        if len(keyword) < 3 or keyword in STOP_WORDS or keyword in seen:
+            continue
+        seen.add(keyword)
+        keywords.append(keyword)
+    return ", ".join(keywords)
+
+
 def render_article_markdown(
     *,
     article_id: int,
@@ -74,12 +88,20 @@ def render_article_markdown(
     cleaned_html = strip_unwanted_html(html_body)
     body_markdown = normalize_markdown(html_to_markdown(cleaned_html))
     frontmatter = build_frontmatter(article_id, title, updated_at, article_url)
+    keywords = build_keywords(title)
+
+    metadata_lines = [
+        f"# {title}",
+        f"Article URL: {article_url}",
+    ]
+    if keywords:
+        metadata_lines.append(f"Keywords: {keywords}")
 
     final_content = normalize_markdown(
         "\n\n".join(
             [
                 frontmatter,
-                f"Article URL: {article_url}",
+                "\n".join(metadata_lines),
                 body_markdown,
             ]
         )

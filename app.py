@@ -58,7 +58,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
 
     try:
         response = ask_question(message)
-        answer, _ = format_answer(response)
+        answer, _ = format_answer(response, message)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Chat request failed: {exc}") from exc
 

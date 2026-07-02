@@ -34,18 +34,20 @@
 
       .page {
         min-height: 100vh;
-        padding: 24px;
+        padding: 24px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .widget {
-        position: fixed;
-        right: 20px;
-        bottom: 20px;
-        width: min(860px, calc(100vw - 20px));
-        height: min(868px, calc(100vh - 20px));
+        position: relative;
+        width: min(920px, calc(100vw - 32px));
+        height: min(860px, calc(100vh - 48px));
+        min-height: 720px;
         background: var(--panel);
         border: 1px solid rgba(21, 39, 58, 0.08);
-        border-radius: 18px;
+        border-radius: 24px;
         box-shadow: var(--shadow);
         overflow: hidden;
         display: flex;
@@ -102,7 +104,7 @@
       .body {
         flex: 1;
         overflow-y: auto;
-        padding: 8px 12px 12px;
+        padding: 16px 20px 18px;
         background:
           linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
       }
@@ -115,7 +117,8 @@
         border: 1px solid rgba(22, 41, 63, 0.05);
         border-radius: 12px;
         padding: 14px 14px;
-        margin: 0 0 16px;
+        margin: 0 auto 18px;
+        max-width: 760px;
       }
 
       .support-card strong,
@@ -129,15 +132,21 @@
         text-decoration: none;
       }
 
+      .support-link:hover,
+      .answer-card a:hover {
+        text-decoration: underline;
+      }
+
       .message {
         display: flex;
         gap: 12px;
         align-items: flex-start;
         margin-bottom: 16px;
+        width: 100%;
       }
 
       .message-content {
-        max-width: 88%;
+        max-width: min(760px, 100%);
       }
 
       .message-content p {
@@ -197,20 +206,34 @@
       }
 
       .bot-row .message-content {
-        padding-right: 20px;
+        padding-right: 8px;
       }
 
       .answer-card {
         background: white;
         border: 1px solid rgba(20, 38, 56, 0.08);
         border-radius: 16px 16px 16px 4px;
-        padding: 14px 16px;
+        padding: 16px 18px;
         box-shadow: 0 10px 25px rgba(34, 53, 76, 0.05);
+        font-size: 15px;
+        line-height: 1.65;
       }
 
-      .answer-card ul {
-        margin: 10px 0 0 18px;
-        padding: 0;
+      .answer-card p,
+      .answer-card ul,
+      .answer-card ol {
+        margin: 0 0 12px;
+      }
+
+      .answer-card p:last-child,
+      .answer-card ul:last-child,
+      .answer-card ol:last-child {
+        margin-bottom: 0;
+      }
+
+      .answer-card ul,
+      .answer-card ol {
+        padding-left: 22px;
       }
 
       .answer-card li + li {
@@ -218,7 +241,18 @@
       }
 
       .answer-card a {
-        color: #0b8fb1;
+        color: #0b9b93;
+        text-decoration: none;
+        word-break: break-word;
+      }
+
+      .answer-card code {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 0.94em;
+        background: #f2f6fb;
+        border: 1px solid rgba(36, 50, 70, 0.08);
+        border-radius: 6px;
+        padding: 2px 6px;
       }
 
       .loading {
@@ -228,6 +262,8 @@
         color: var(--muted);
         font-size: 14px;
         padding: 0 0 8px 36px;
+        max-width: 760px;
+        margin: 0 auto;
       }
 
       .loading.is-visible {
@@ -262,6 +298,8 @@
       }
 
       .composer-shell {
+        max-width: 760px;
+        margin: 0 auto;
         border: 1px solid var(--border);
         border-radius: 16px;
         padding: 14px 14px 10px;
@@ -313,13 +351,14 @@
       }
 
       .error {
-        margin: 0 0 10px 36px;
+        margin: 0 auto 10px;
         color: #a53a3a;
         background: #fff3f1;
         border: 1px solid #f2d0cb;
         border-radius: 12px;
         padding: 10px 12px;
         display: none;
+        max-width: 760px;
       }
 
       .error.is-visible {
@@ -342,18 +381,22 @@
       @media (max-width: 720px) {
         .page {
           padding: 0;
+          align-items: stretch;
         }
 
         .widget {
-          right: 0;
-          bottom: 0;
           width: 100vw;
           height: 100vh;
+          min-height: 100vh;
           border-radius: 0;
         }
 
         .message-content {
           max-width: 100%;
+        }
+
+        .body {
+          padding: 14px 14px 18px;
         }
 
         .quick-actions {
@@ -458,38 +501,122 @@
           .replaceAll("'", "&#39;");
       }
 
-      function formatMessage(text) {
-        const escaped = escapeHtml(text);
-        return escaped
-          .replace(/Article URL:\s*(https?:\/\/\S+)/g, '<a href="$1" target="_blank" rel="noreferrer">Article URL: $1</a>')
-          .replace(/\n/g, "<br>");
+      function buildSafeLink(url, label) {
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return escapeHtml(label);
+          }
+          const safeHref = escapeHtml(parsed.href);
+          return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+        } catch {
+          return escapeHtml(label);
+        }
+      }
+
+      function linkifyRawUrls(escapedText) {
+        return escapedText.replace(/https?:\/\/[^\s<]+/g, (candidate) => {
+          const match = candidate.match(/^(.*?)([),.;:!?]+)?$/);
+          const rawUrl = match ? match[1] : candidate;
+          const trailing = match && match[2] ? match[2] : "";
+          return `${buildSafeLink(rawUrl, escapeHtml(rawUrl))}${trailing}`;
+        });
+      }
+
+      function formatInlineMarkdown(text) {
+        const tokens = [];
+
+        function stash(html) {
+          const token = `__HTML_TOKEN_${tokens.length}__`;
+          tokens.push(html);
+          return token;
+        }
+
+        let output = "";
+        let lastIndex = 0;
+        const markdownLinkRe = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+
+        for (const match of text.matchAll(markdownLinkRe)) {
+          const [fullMatch, label, url] = match;
+          const matchIndex = match.index || 0;
+          output += escapeHtml(text.slice(lastIndex, matchIndex));
+          output += stash(buildSafeLink(url, escapeHtml(label)));
+          lastIndex = matchIndex + fullMatch.length;
+        }
+
+        output += escapeHtml(text.slice(lastIndex));
+
+        output = output.replace(/`([^`]+)`/g, (_, value) => stash(`<code>${value}</code>`));
+        output = output.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        output = linkifyRawUrls(output);
+
+        output = output.replace(/__HTML_TOKEN_(\d+)__/g, (_, index) => tokens[Number(index)]);
+        return output;
+      }
+
+      function renderSafeMarkdown(text) {
+        const normalized = text.replace(/\r\n/g, "\n").trim();
+        if (!normalized) {
+          return "<p>No answer returned.</p>";
+        }
+
+        const blocks = normalized.split(/\n\s*\n/);
+        const rendered = blocks.map((block) => {
+          const lines = block.split("\n").map((line) => line.trimEnd());
+          const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
+          const numberedLines = lines.filter((line) => /^\d+\.\s+/.test(line));
+
+          if (bulletLines.length === lines.length) {
+            const items = lines
+              .map((line) => line.replace(/^[-*]\s+/, ""))
+              .map((line) => `<li>${formatInlineMarkdown(line)}</li>`)
+              .join("");
+            return `<ul>${items}</ul>`;
+          }
+
+          if (numberedLines.length === lines.length) {
+            const items = lines
+              .map((line) => line.replace(/^\d+\.\s+/, ""))
+              .map((line) => `<li>${formatInlineMarkdown(line)}</li>`)
+              .join("");
+            return `<ol>${items}</ol>`;
+          }
+
+          return `<p>${lines.map((line) => formatInlineMarkdown(line)).join("<br>")}</p>`;
+        });
+
+        return rendered.join("");
       }
 
       function appendUserMessage(text) {
         const row = document.createElement("div");
         row.className = "message user-row";
-        row.innerHTML = `
-          <div class="message-content">
-            <p>${formatMessage(text)}</p>
-          </div>
-        `;
+        const content = document.createElement("div");
+        content.className = "message-content";
+        const paragraph = document.createElement("p");
+        paragraph.textContent = text;
+        content.appendChild(paragraph);
+        row.appendChild(content);
         messages.insertBefore(row, errorBox);
       }
 
       function appendBotMessage(text) {
         const row = document.createElement("div");
         row.className = "message bot-row";
-        row.innerHTML = `
-          <span class="bot-icon" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M8 9V7a4 4 0 0 1 8 0v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-              <rect x="4" y="9" width="16" height="10" rx="3" stroke="currentColor" stroke-width="1.7"/>
-            </svg>
-          </span>
-          <div class="message-content answer-card">
-            <p>${formatMessage(text)}</p>
-          </div>
+        const icon = document.createElement("span");
+        icon.className = "bot-icon";
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M8 9V7a4 4 0 0 1 8 0v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            <rect x="4" y="9" width="16" height="10" rx="3" stroke="currentColor" stroke-width="1.7"/>
+          </svg>
         `;
+        const content = document.createElement("div");
+        content.className = "message-content answer-card";
+        content.innerHTML = renderSafeMarkdown(text);
+        row.appendChild(icon);
+        row.appendChild(content);
         messages.insertBefore(row, errorBox);
       }
 

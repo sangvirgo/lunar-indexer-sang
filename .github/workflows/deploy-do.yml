@@ -75,6 +75,5 @@ jobs:
             docker compose up -d web
             chmod +x deploy/run_ingest.sh deploy/install_cron.sh
             APP_DIR=\"$DO_APP_DIR\" CRON_SCHEDULE=\"0 1-23/6 * * *\" ./deploy/install_cron.sh
-            APP_DIR=\"$DO_APP_DIR\" ./deploy/run_ingest.sh
             docker compose ps
           "

@@ -50,9 +50,10 @@ def load_manifest() -> dict[int, dict[str, object]]:
 def build_articles_and_diff(
     article_limit: int,
     target_store_name: str,
-) -> tuple[list[dict[str, object]], list[UploadDocument], dict[str, int]]:
+) -> tuple[list[dict[str, object]], list[UploadDocument], dict[str, int], dict[str, object]]:
     previous_manifest = load_manifest()
-    articles = fetch_articles(limit=article_limit)
+    selection = fetch_articles(limit=article_limit)
+    articles = selection.selected_articles
     next_manifest: list[dict[str, object]] = []
     upload_documents_list: list[UploadDocument] = []
 
@@ -61,6 +62,14 @@ def build_articles_and_diff(
         "added": 0,
         "updated": 0,
         "skipped": 0,
+    }
+    diagnostics = {
+        "total_available": selection.total_available,
+        "total_fetched": selection.total_fetched,
+        "selected": len(articles),
+        "priority_selected_count": selection.priority_selected_count,
+        "article_limit": selection.article_limit,
+        "first_10_selected_titles": [article.title for article in articles[:10]],
     }
 
     for article in articles:
@@ -124,7 +133,7 @@ def build_articles_and_diff(
 
         counts["skipped"] += 1
 
-    return next_manifest, upload_documents_list, counts
+    return next_manifest, upload_documents_list, counts, diagnostics
 
 
 def apply_upload_metadata(
@@ -156,7 +165,7 @@ def main() -> None:
     store_name, _ = ensure_file_search_store(client)
 
     try:
-        manifest_entries, changed_documents, counts = build_articles_and_diff(
+        manifest_entries, changed_documents, counts, diagnostics = build_articles_and_diff(
             article_limit,
             store_name,
         )
@@ -184,6 +193,7 @@ def main() -> None:
         "skipped": counts["skipped"],
         "uploaded": upload_result.uploaded_count,
         "store_name": upload_result.store_name,
+        "selection": diagnostics,
     }
     write_json(LAST_RUN_PATH, summary)
     print(json.dumps(summary, indent=2))
