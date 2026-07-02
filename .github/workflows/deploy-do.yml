@@ -1,14 +1,80 @@
-name: Deploy DigitalOcean Placeholder
+name: Deploy to DigitalOcean
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_PORT: ${{ secrets.DO_PORT }}
+      DO_APP_DIR: ${{ secrets.DO_APP_DIR }}
     steps:
-      - name: Checkout
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          [ -n "${DO_HOST}" ] || { echo "Missing required secret: DO_HOST"; exit 1; }
+          [ -n "${DO_USER}" ] || { echo "Missing required secret: DO_USER"; exit 1; }
+          [ -n "${DO_PORT}" ] || { echo "Missing required secret: DO_PORT"; exit 1; }
+          [ -n "${DO_APP_DIR}" ] || { echo "Missing required secret: DO_APP_DIR"; exit 1; }
+          [ -n "${{ secrets.DO_SSH_KEY }}" ] || { echo "Missing required secret: DO_SSH_KEY"; exit 1; }
+
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Placeholder
-        run: echo "Add DigitalOcean deployment steps here."
+      - name: Docker build sanity check
+        run: docker build -t lunar-indexer-ci .
+
+      - name: Prepare SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/do_deploy_key
+          chmod 600 ~/.ssh/do_deploy_key
+
+      - name: Add host to known_hosts
+        run: |
+          set -euo pipefail
+          ssh-keyscan -p "$DO_PORT" "$DO_HOST" >> ~/.ssh/known_hosts
+
+      - name: Create app directory on server
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/do_deploy_key -p "$DO_PORT" "$DO_USER@$DO_HOST" "mkdir -p \"$DO_APP_DIR\""
+
+      - name: Rsync source code to server
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.env' \
+            --exclude '.venv/' \
+            --exclude '__pycache__/' \
+            --exclude 'data/articles/' \
+            --exclude 'data/manifest.json' \
+            --exclude 'data/last_run.json' \
+            --exclude 'screenshots/*.png' \
+            --exclude 'logs/' \
+            -e "ssh -i ~/.ssh/do_deploy_key -p $DO_PORT" \
+            ./ "$DO_USER@$DO_HOST:$DO_APP_DIR/"
+
+      - name: Deploy on server
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/do_deploy_key -p "$DO_PORT" "$DO_USER@$DO_HOST" "
+            set -euo pipefail
+            cd \"$DO_APP_DIR\"
+            test -f .env
+            mkdir -p data
+            docker compose build
+            docker compose up -d web
+            chmod +x deploy/run_ingest.sh deploy/install_cron.sh
+            APP_DIR=\"$DO_APP_DIR\" CRON_SCHEDULE=\"0 1-23/6 * * *\" ./deploy/install_cron.sh
+            APP_DIR=\"$DO_APP_DIR\" ./deploy/run_ingest.sh
+            docker compose ps
+          "

@@ -7,6 +7,8 @@ services:
       - "8000:8000"
     command: uvicorn app:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
+    volumes:
+      - ./data:/app/data
 
   ingest:
     build: .
@@ -15,3 +17,5 @@ services:
     command: python main.py
     profiles:
       - job
+    volumes:
+      - ./data:/app/data
