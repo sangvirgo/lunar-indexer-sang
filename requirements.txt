@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+markdownify
+python-slugify
+python-dotenv
+google-genai
+lxml
+fastapi
+uvicorn
+pydantic

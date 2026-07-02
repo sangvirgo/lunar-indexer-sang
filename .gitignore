@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/articles/
+data/manifest.json
+data/last_run.json
