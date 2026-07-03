@@ -15,6 +15,12 @@ jobs:
       DO_PORT: ${{ secrets.DO_PORT }}
       DO_APP_DIR: ${{ secrets.DO_APP_DIR }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Docker build sanity check
+        run: docker build -t lunar-indexer-ci .
+
       - name: Validate required secrets
         run: |
           set -euo pipefail
@@ -23,12 +29,6 @@ jobs:
           [ -n "${DO_PORT}" ] || { echo "Missing required secret: DO_PORT"; exit 1; }
           [ -n "${DO_APP_DIR}" ] || { echo "Missing required secret: DO_APP_DIR"; exit 1; }
           [ -n "${{ secrets.DO_SSH_KEY }}" ] || { echo "Missing required secret: DO_SSH_KEY"; exit 1; }
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Docker build sanity check
-        run: docker build -t lunar-indexer-ci .
 
       - name: Prepare SSH key
         run: |
@@ -72,8 +72,10 @@ jobs:
             test -f .env
             mkdir -p data
             docker compose build
-            docker compose up -d web
+            docker compose up -d --force-recreate web
             chmod +x deploy/run_ingest.sh deploy/install_cron.sh
-            APP_DIR=\"$DO_APP_DIR\" CRON_SCHEDULE=\"0 1-23/6 * * *\" ./deploy/install_cron.sh
+            APP_DIR=\"$DO_APP_DIR\" CRON_SCHEDULE=\"0 */2 * * *\" ./deploy/install_cron.sh
+            APP_DIR=\"$DO_APP_DIR\" ./deploy/run_ingest.sh
             docker compose ps
+            tail -n 80 /var/log/lunar-indexer/ingest.log || true
           "

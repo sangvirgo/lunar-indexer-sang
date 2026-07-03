@@ -175,6 +175,9 @@
         flex-wrap: wrap;
         gap: 10px;
         margin-top: 14px;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
       }
 
       .quick-actions button {
@@ -186,6 +189,9 @@
         font-size: 14px;
         cursor: pointer;
         transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+        max-width: 100%;
+        white-space: normal;
+        text-align: left;
       }
 
       .quick-actions button:hover {
@@ -400,8 +406,11 @@
         }
 
         .quick-actions {
-          flex-direction: column;
-          align-items: flex-start;
+          gap: 8px;
+        }
+
+        .quick-actions button {
+          width: 100%;
         }
       }
     </style>
@@ -458,6 +467,8 @@
                 <button type="button" data-question="How do I add a YouTube video?">How do I add a YouTube video?</button>
                 <button type="button" data-question="How do I add a screen?">How do I add a screen?</button>
                 <button type="button" data-question="How do I create a playlist?">How do I create a playlist?</button>
+                <button type="button" data-question="How do I add a Vimeo video?">How do I add a Vimeo video?</button>
+                <button type="button" data-question="What file types are supported?">What file types are supported?</button>
               </div>
             </div>
           </div>
