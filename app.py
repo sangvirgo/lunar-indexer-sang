@@ -9,7 +9,6 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ask import format_answer, ask_question
-from pinned_sources import load_pinned_markdown
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -57,11 +56,9 @@ def chat(payload: ChatRequest) -> ChatResponse:
         "Missing GEMINI_FILE_SEARCH_STORE_NAME. Add it to .env.",
     )
 
-    pinned_source = load_pinned_markdown(message, PROJECT_ROOT / "data" / "articles")
-
     try:
-        response = ask_question(message, pinned_source=pinned_source)
-        answer, _ = format_answer(response, message, pinned_source=pinned_source)
+        response = ask_question(message)
+        answer, _ = format_answer(response, message)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Chat request failed: {exc}") from exc
 

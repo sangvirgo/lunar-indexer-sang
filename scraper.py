@@ -6,8 +6,6 @@ from typing import Any
 
 import requests
 
-from pinned_sources import PINNED_SOURCES
-
 
 HELP_CENTER_API_URL = "https://support.optisigns.com/api/v2/help_center/en-us/articles.json"
 HELP_CENTER_ARTICLE_API_URL = "https://support.optisigns.com/api/v2/help_center/en-us/articles/{article_id}.json"
@@ -29,7 +27,6 @@ class ArticleSelectionResult:
     total_available: int
     total_fetched: int
     article_limit: int
-    priority_selected_count: int
     excluded_dashboard_count: int
     selected_articles: list[HelpCenterArticle]
 
@@ -77,28 +74,12 @@ def _is_dashboard_article(article: HelpCenterArticle) -> bool:
     return any(term in text for term in DASHBOARD_TERMS)
 
 
-def _matches_demo_article(article: HelpCenterArticle, article_id: int) -> bool:
-    return article.article_id == article_id
-
-
-def _priority_pinned_articles(articles: list[HelpCenterArticle]) -> list[HelpCenterArticle]:
-    pinned_ids = [int(source["article_id"]) for source in PINNED_SOURCES]
-    by_id = {article.article_id: article for article in articles}
-    pinned: list[HelpCenterArticle] = []
-    for article_id in pinned_ids:
-        article = by_id.get(article_id)
-        if article:
-            pinned.append(article)
-    return pinned
-
-
 def fetch_articles(limit: int, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> ArticleSelectionResult:
     if limit <= 0:
         return ArticleSelectionResult(
             total_available=0,
             total_fetched=0,
             article_limit=limit,
-            priority_selected_count=0,
             excluded_dashboard_count=0,
             selected_articles=[],
         )
@@ -128,37 +109,25 @@ def fetch_articles(limit: int, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> Articl
 
         next_page = payload.get("next_page")
 
-    for source in PINNED_SOURCES:
-        article_id = int(source["article_id"])
-        if article_id in deduped_articles:
-            continue
-        fetched_article = _request_article_by_id(article_id, timeout=timeout)
-        if fetched_article:
-            deduped_articles[article_id] = fetched_article
-
     all_articles = list(deduped_articles.values())
     dashboard_articles = [article for article in all_articles if _is_dashboard_article(article)]
     non_dashboard_articles = [article for article in all_articles if not _is_dashboard_article(article)]
     source_articles = non_dashboard_articles if len(non_dashboard_articles) >= limit else all_articles
     excluded_dashboard_count = len(dashboard_articles) if source_articles is non_dashboard_articles else 0
 
-    pinned_articles = _priority_pinned_articles(source_articles)
-    selected_ids = {article.article_id for article in pinned_articles}
-    remaining_slots = max(limit - len(pinned_articles), 0)
-    recent_articles = sorted(
-        (article for article in source_articles if article.article_id not in selected_ids),
+    selected_articles = sorted(
+        source_articles,
         key=lambda article: (
             -_parse_updated_at(article.updated_at).timestamp(),
             article.title.lower(),
         ),
     )
-    selected_articles = (pinned_articles + recent_articles[:remaining_slots])[:limit]
+    selected_articles = selected_articles[:limit]
 
     return ArticleSelectionResult(
         total_available=total_available or len(all_articles),
         total_fetched=len(all_articles),
         article_limit=limit,
-        priority_selected_count=len(pinned_articles),
         excluded_dashboard_count=excluded_dashboard_count,
         selected_articles=selected_articles,
     )
