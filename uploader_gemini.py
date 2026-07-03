@@ -101,7 +101,6 @@ def ensure_file_search_store(client: genai.Client) -> tuple[str, bool]:
     )
     created_name = created_store.name or ""
     print(f"Created Gemini File Search Store: {created_name}")
-    print("Save this value in .env as GEMINI_FILE_SEARCH_STORE_NAME.")
     _save_store_name_to_env(created_name)
     return created_name, True
 

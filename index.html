@@ -593,7 +593,27 @@
             return `<ol>${items}</ol>`;
           }
 
-          return `<p>${lines.map((line) => formatInlineMarkdown(line)).join("<br>")}</p>`;
+          const inlineBulletMatch = block.match(/^\s*[-*]\s+/m);
+          const inlineNumberedMatch = block.match(/^\s*\d+\.\s+/m);
+
+          if (inlineBulletMatch || inlineNumberedMatch) {
+            const listPattern = inlineBulletMatch ? /[-*]\s+/g : /\d+\.\s+/g;
+            const normalizedItems = block
+              .replace(/\n(?=\S)/g, " ")
+              .split(listPattern)
+              .map((item) => item.trim())
+              .filter(Boolean)
+              .map((item) => `<li>${formatInlineMarkdown(item)}</li>`)
+              .join("");
+
+            return inlineBulletMatch ? `<ul>${normalizedItems}</ul>` : `<ol>${normalizedItems}</ol>`;
+          }
+
+          const paragraph = lines
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .join(" ");
+          return `<p>${formatInlineMarkdown(paragraph)}</p>`;
         });
 
         return rendered.join("");

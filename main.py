@@ -68,6 +68,7 @@ def build_articles_and_diff(
         "total_fetched": selection.total_fetched,
         "selected": len(articles),
         "priority_selected_count": selection.priority_selected_count,
+        "excluded_dashboard_count": selection.excluded_dashboard_count,
         "article_limit": selection.article_limit,
         "first_10_selected_titles": [article.title for article in articles[:10]],
     }

@@ -19,11 +19,13 @@ SYSTEM_PROMPT = """You are OptiBot, the customer-support bot for OptiSigns.com.
 • Cite up to 3 "Article URL:" lines per reply."""
 ARTICLE_URL_RE = re.compile(r"Article URL:\s*(https?://\S+)", re.IGNORECASE)
 YOUTUBE_VIDEO_HINT = (
-    "Retrieval hint: For questions about adding a normal YouTube video, "
-    "prefer documentation about the YouTube app/video content, not YouTube Dashboard analytics."
+    "The user means adding a normal YouTube video using the standard YouTube App. "
+    "Prefer the article 'How to use YouTube with OptiSigns'. "
+    "Do not use YouTube Dashboard, Analytics, or Looker Studio unless the user explicitly asks about dashboards or analytics."
 )
 PROJECT_ROOT = Path(__file__).resolve().parent
 LOCAL_ARTICLES_DIR = PROJECT_ROOT / "data" / "articles"
+CANONICAL_YOUTUBE_URL = "https://support.optisigns.com/hc/en-us/articles/360051014713-How-to-use-YouTube-with-OptiSigns"
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,7 +41,46 @@ def require_env(name: str, message: str) -> str:
     return value
 
 
-def ask_question(question: str) -> Any:
+def normalize_question(question: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", question.lower()).strip()
+
+
+def youtube_sample_retrieval_hint(question: str) -> str | None:
+    normalized = normalize_question(question)
+    if not normalized:
+        return None
+
+    if any(term in normalized for term in ("dashboard", "analytics", "looker studio")):
+        return None
+
+    required_terms = ("youtube", "video")
+    if not all(term in normalized.split() for term in required_terms):
+        return None
+
+    if "add" in normalized.split():
+        return YOUTUBE_VIDEO_HINT
+
+    approximate_phrases = (
+        "how do i use youtube video",
+        "how to use youtube video",
+        "how do i add a youtube video",
+        "how to add a youtube video",
+        "add youtube video",
+    )
+    if any(phrase in normalized for phrase in approximate_phrases):
+        return YOUTUBE_VIDEO_HINT
+
+    return None
+
+
+def build_retrieval_contents(question: str, retrieval_hint: str | None = None) -> str:
+    resolved_hint = retrieval_hint if retrieval_hint is not None else youtube_sample_retrieval_hint(question)
+    if not resolved_hint:
+        return question
+    return f"{question}\n\nRetrieval hint: {resolved_hint}"
+
+
+def ask_question(question: str, retrieval_hint: str | None = None) -> Any:
     api_key = require_env("GEMINI_API_KEY", "Missing GEMINI_API_KEY. Add it to .env.")
     store_name = require_env(
         "GEMINI_FILE_SEARCH_STORE_NAME",
@@ -47,10 +88,7 @@ def ask_question(question: str) -> Any:
     )
     model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
-    contents = question
-    normalized_question = question.lower()
-    if "youtube" in normalized_question and "video" in normalized_question and "add" in normalized_question:
-        contents = f"{question}\n\n{YOUTUBE_VIDEO_HINT}"
+    contents = build_retrieval_contents(question, retrieval_hint)
 
     client = genai.Client(api_key=api_key)
     return client.models.generate_content(
@@ -137,6 +175,8 @@ def _local_citation_score(question: str, title: str, url: str, body: str) -> int
         score += 50
     if "youtube app" in title_lower:
         score += 40
+    if url == CANONICAL_YOUTUBE_URL:
+        score += 400
     if "dashboard" in title_lower or "analytics" in title_lower or "looker studio" in title_lower:
         score -= 120
     return score
@@ -197,9 +237,10 @@ def main() -> None:
     load_dotenv()
     args = parse_args()
     question = " ".join(args.question).strip() or DEFAULT_QUESTION
+    retrieval_hint = youtube_sample_retrieval_hint(question)
 
     try:
-        response = ask_question(question)
+        response = ask_question(question, retrieval_hint=retrieval_hint)
         answer_text, _ = format_answer(response, question)
     except Exception as exc:
         print(f"Question: {question}")

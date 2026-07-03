@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from ask import format_answer, ask_question
+from ask import format_answer, ask_question, youtube_sample_retrieval_hint
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -57,7 +57,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
     )
 
     try:
-        response = ask_question(message)
+        response = ask_question(message, retrieval_hint=youtube_sample_retrieval_hint(message))
         answer, _ = format_answer(response, message)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Chat request failed: {exc}") from exc
