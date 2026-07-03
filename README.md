@@ -62,9 +62,29 @@ docker compose up -d --build --force-recreate web
 docker compose run --rm web python ask.py "How do I add a YouTube video?"
 ```
 
-## Screenshot
+## Showcase
 
-Current UI/demo references:
+### Assistant YouTube Answer Terminal
+Local terminal verification showing the expected YouTube support article answer.
 
-- Gemini upload flow screenshot: `image.png`
-- Question and response screenshot: `image-1.png`
+![Assistant YouTube Answer Terminal](screenshots/screenshots⁄assistant-youtube-answer-terminal.png)
+
+### Assistant YouTube Answer Web 1
+Web UI example of the assistant returning the expected YouTube guidance.
+
+![Assistant YouTube Answer Web 1](screenshots/screenshots⁄assistant-youtube-answer-web-1.png)
+
+### Assistant YouTube Answer Web 2
+Additional web UI example showing the rendered answer flow.
+
+![Assistant YouTube Answer Web 2](screenshots/screenshots⁄assistant-youtube-answer-web-2.png)
+
+### GitHub Actions Deploy
+Deployment workflow view for the GitHub Actions-based server sync process.
+
+![GitHub Actions Deploy](screenshots/screenshots⁄github-actions-deploy.png)
+
+### Scheduled Ingest Log
+Server log output confirming the scheduled knowledge ingestion run.
+
+![Scheduled Ingest Log](screenshots/screenshots⁄scheduled-ingest-log.png)
