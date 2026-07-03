@@ -28,7 +28,11 @@ docker compose down
 
 Public demo URL: http://159.223.93.125
 
-GitHub Actions force-syncs source code to DigitalOcean with `rsync --delete`, rebuilds Docker on the server, restarts the web container, installs or updates the cron job, and runs ingestion once after deploy. The workflow triggers on pushes to `main` and `workflow_dispatch`. The server `.env` must already exist manually before deploy and is never overwritten by the workflow.
+For deterministic demo knowledge, the generated Markdown snapshot under `data/articles/*.md` is committed to Git and deployed with the app. This keeps local `ask.py` results and deployed server knowledge aligned to the same source files.
+
+`data/manifest.json` and `data/last_run.json` are runtime artifacts. They are not committed and should be treated as disposable ingestion state on each environment.
+
+GitHub Actions force-syncs source code and committed Markdown knowledge files to DigitalOcean with `rsync --delete`, rebuilds Docker on the server, restarts the web container, installs or updates the cron job, and runs ingestion once after deploy. The workflow triggers on pushes to `main` and `workflow_dispatch`. The server `.env` must already exist manually before deploy and is never overwritten by the workflow.
 
 The app uses Gemini File Search for general questions. For a few demo-critical FAQ questions, it also pins the exact scraped support article as additional context to avoid ambiguous retrieval. This is not answer hard-coding; answers are still generated from scraped docs.
 
@@ -44,14 +48,18 @@ Scheduled ingestion runs every 2 hours with cron expression `0 */2 * * *`. The r
 
 The ingestion log file is `/var/log/lunar-indexer/ingest.log`, and the last run artifact is `data/last_run.json`.
 
-Manual server commands:
+Manual force-refresh commands:
 
 ```bash
 cd /opt/lunar-indexer
+git pull origin main
+rm -f data/manifest.json data/last_run.json
+sed -i 's|^GEMINI_FILE_SEARCH_STORE_NAME=.*|GEMINI_FILE_SEARCH_STORE_NAME=|' .env
 APP_DIR=/opt/lunar-indexer ./deploy/run_ingest.sh
-tail -n 100 /var/log/lunar-indexer/ingest.log
-cat data/last_run.json
-docker compose ps
+NEW_STORE=$(grep -o 'fileSearchStores/[A-Za-z0-9_-]*' /var/log/lunar-indexer/ingest.log | tail -1)
+sed -i "s|^GEMINI_FILE_SEARCH_STORE_NAME=.*|GEMINI_FILE_SEARCH_STORE_NAME=$NEW_STORE|" .env
+docker compose up -d --build --force-recreate web
+docker compose run --rm web python ask.py "How do I add a YouTube video?"
 ```
 
 ## Screenshot

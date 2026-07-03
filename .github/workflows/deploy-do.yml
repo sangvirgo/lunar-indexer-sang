@@ -55,7 +55,6 @@ jobs:
             --exclude '.env' \
             --exclude '.venv/' \
             --exclude '__pycache__/' \
-            --exclude 'data/articles/' \
             --exclude 'data/manifest.json' \
             --exclude 'data/last_run.json' \
             --exclude 'screenshots/*.png' \
@@ -71,7 +70,7 @@ jobs:
             cd \"$DO_APP_DIR\"
             test -f .env
             mkdir -p data
-            docker compose build
+            docker compose build --no-cache
             docker compose up -d --force-recreate web
             chmod +x deploy/run_ingest.sh deploy/install_cron.sh
             APP_DIR=\"$DO_APP_DIR\" CRON_SCHEDULE=\"0 */2 * * *\" ./deploy/install_cron.sh
