@@ -6,13 +6,12 @@ from typing import Any
 
 import requests
 
+from pinned_sources import PINNED_SOURCES
+
 
 HELP_CENTER_API_URL = "https://support.optisigns.com/api/v2/help_center/en-us/articles.json"
+HELP_CENTER_ARTICLE_API_URL = "https://support.optisigns.com/api/v2/help_center/en-us/articles/{article_id}.json"
 DEFAULT_TIMEOUT_SECONDS = 30
-CANONICAL_YOUTUBE_ARTICLE_ID = 360051014713
-PLAYLIST_DEMO_ARTICLE_ID = 28295104605843
-VIMEO_DEMO_ARTICLE_ID = 360016254994
-SUPPORTED_FILES_ARTICLE_ID = 360016342373
 DASHBOARD_TERMS = ("youtube dashboard", "dashboard", "analytics", "looker studio")
 
 
@@ -41,6 +40,27 @@ def _request_page(url: str, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str,
     return response.json()
 
 
+def _request_article_by_id(article_id: int, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> HelpCenterArticle | None:
+    response = requests.get(
+        HELP_CENTER_ARTICLE_API_URL.format(article_id=article_id),
+        timeout=timeout,
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    article = response.json().get("article") or {}
+    body = (article.get("body") or "").strip()
+    if not body:
+        return None
+    return HelpCenterArticle(
+        article_id=int(article["id"]),
+        title=(article.get("title") or "").strip(),
+        html_url=(article.get("html_url") or "").strip(),
+        body=body,
+        updated_at=(article.get("updated_at") or "").strip(),
+    )
+
+
 def _parse_updated_at(value: str) -> datetime:
     normalized = value.strip()
     if normalized.endswith("Z"):
@@ -62,12 +82,7 @@ def _matches_demo_article(article: HelpCenterArticle, article_id: int) -> bool:
 
 
 def _priority_pinned_articles(articles: list[HelpCenterArticle]) -> list[HelpCenterArticle]:
-    pinned_ids = [
-        CANONICAL_YOUTUBE_ARTICLE_ID,
-        PLAYLIST_DEMO_ARTICLE_ID,
-        VIMEO_DEMO_ARTICLE_ID,
-        SUPPORTED_FILES_ARTICLE_ID,
-    ]
+    pinned_ids = [int(source["article_id"]) for source in PINNED_SOURCES]
     by_id = {article.article_id: article for article in articles}
     pinned: list[HelpCenterArticle] = []
     for article_id in pinned_ids:
@@ -112,6 +127,14 @@ def fetch_articles(limit: int, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> Articl
             )
 
         next_page = payload.get("next_page")
+
+    for source in PINNED_SOURCES:
+        article_id = int(source["article_id"])
+        if article_id in deduped_articles:
+            continue
+        fetched_article = _request_article_by_id(article_id, timeout=timeout)
+        if fetched_article:
+            deduped_articles[article_id] = fetched_article
 
     all_articles = list(deduped_articles.values())
     dashboard_articles = [article for article in all_articles if _is_dashboard_article(article)]

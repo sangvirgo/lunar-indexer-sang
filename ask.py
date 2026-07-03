@@ -9,6 +9,8 @@ from typing import Any
 from dotenv import load_dotenv
 from google import genai
 
+from pinned_sources import find_pinned_source_for_question, load_pinned_markdown
+
 
 DEFAULT_QUESTION = "How do I add a YouTube video?"
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -18,14 +20,12 @@ SYSTEM_PROMPT = """You are OptiBot, the customer-support bot for OptiSigns.com.
 • Max 5 bullet points; else link to the doc.
 • Cite up to 3 "Article URL:" lines per reply."""
 ARTICLE_URL_RE = re.compile(r"Article URL:\s*(https?://\S+)", re.IGNORECASE)
-YOUTUBE_VIDEO_HINT = (
-    "The user means adding a normal YouTube video using the standard YouTube App. "
-    "Prefer the article 'How to use YouTube with OptiSigns'. "
-    "Do not use YouTube Dashboard, Analytics, or Looker Studio unless the user explicitly asks about dashboards or analytics."
+RETRIEVAL_GUARD_INSTRUCTION = (
+    "Use the pinned article context when provided. Do not cite unrelated articles. "
+    "If the pinned article context is provided, the Article URL in the final answer must match the pinned Article URL."
 )
 PROJECT_ROOT = Path(__file__).resolve().parent
 LOCAL_ARTICLES_DIR = PROJECT_ROOT / "data" / "articles"
-CANONICAL_YOUTUBE_URL = "https://support.optisigns.com/hc/en-us/articles/360051014713-How-to-use-YouTube-with-OptiSigns"
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,46 +41,22 @@ def require_env(name: str, message: str) -> str:
     return value
 
 
-def normalize_question(question: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", question.lower()).strip()
-
-
-def youtube_sample_retrieval_hint(question: str) -> str | None:
-    normalized = normalize_question(question)
-    if not normalized:
-        return None
-
-    if any(term in normalized for term in ("dashboard", "analytics", "looker studio")):
-        return None
-
-    required_terms = ("youtube", "video")
-    if not all(term in normalized.split() for term in required_terms):
-        return None
-
-    if "add" in normalized.split():
-        return YOUTUBE_VIDEO_HINT
-
-    approximate_phrases = (
-        "how do i use youtube video",
-        "how to use youtube video",
-        "how do i add a youtube video",
-        "how to add a youtube video",
-        "add youtube video",
-    )
-    if any(phrase in normalized for phrase in approximate_phrases):
-        return YOUTUBE_VIDEO_HINT
-
-    return None
-
-
-def build_retrieval_contents(question: str, retrieval_hint: str | None = None) -> str:
-    resolved_hint = retrieval_hint if retrieval_hint is not None else youtube_sample_retrieval_hint(question)
-    if not resolved_hint:
+def build_retrieval_contents(question: str, pinned_source: dict | None = None) -> str:
+    if not pinned_source or pinned_source.get("status") != "present":
         return question
-    return f"{question}\n\nRetrieval hint: {resolved_hint}"
+
+    return (
+        f"{RETRIEVAL_GUARD_INSTRUCTION}\n\n"
+        "Pinned article context from the scraped support docs:\n"
+        f"Title: {pinned_source['title']}\n"
+        f"Article URL: {pinned_source['url']}\n"
+        "Markdown:\n"
+        f"{pinned_source['markdown']}\n\n"
+        f"User question: {question}"
+    )
 
 
-def ask_question(question: str, retrieval_hint: str | None = None) -> Any:
+def ask_question(question: str, pinned_source: dict | None = None) -> Any:
     api_key = require_env("GEMINI_API_KEY", "Missing GEMINI_API_KEY. Add it to .env.")
     store_name = require_env(
         "GEMINI_FILE_SEARCH_STORE_NAME",
@@ -88,7 +64,7 @@ def ask_question(question: str, retrieval_hint: str | None = None) -> Any:
     )
     model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
-    contents = build_retrieval_contents(question, retrieval_hint)
+    contents = build_retrieval_contents(question, pinned_source)
 
     client = genai.Client(api_key=api_key)
     return client.models.generate_content(
@@ -158,6 +134,7 @@ def extract_grounding_urls(response: Any) -> list[str]:
 
 
 def _local_citation_score(question: str, title: str, url: str, body: str) -> int:
+    pinned_source = find_pinned_source_for_question(question)
     title_lower = title.lower()
     url_lower = url.lower()
     body_lower = body.lower()
@@ -175,7 +152,7 @@ def _local_citation_score(question: str, title: str, url: str, body: str) -> int
         score += 50
     if "youtube app" in title_lower:
         score += 40
-    if url == CANONICAL_YOUTUBE_URL:
+    if pinned_source and url == pinned_source["url"]:
         score += 400
     if "dashboard" in title_lower or "analytics" in title_lower or "looker studio" in title_lower:
         score -= 120
@@ -213,13 +190,63 @@ def fallback_local_article_urls(question: str) -> list[str]:
     return urls
 
 
-def format_answer(response: Any, question: str = "") -> tuple[str, bool]:
+def build_pinned_fallback(pinned_source: dict) -> str:
+    markdown = pinned_source.get("markdown", "")
+    lines = [line.strip() for line in markdown.splitlines()]
+    useful_lines: list[str] = []
+    for line in lines:
+        if not line or line.startswith("---") or line.startswith("Article URL:"):
+            continue
+        if re.match(r"^[a-z_]+:\s", line):
+            continue
+        if line.startswith("#"):
+            continue
+        if line.startswith("![]("):
+            continue
+        if line.startswith("|"):
+            continue
+        useful_lines.append(line)
+        if len(useful_lines) >= 5:
+            break
+
+    if useful_lines:
+        body = "\n".join(useful_lines[:4])
+        return f"{body}\n\nArticle URL: {pinned_source['url']}"
+    return f"{pinned_source['title']}\n\nArticle URL: {pinned_source['url']}"
+
+
+def guard_answer_with_pinned_source(answer_text: str, pinned_source: dict | None) -> str:
+    if not pinned_source or pinned_source.get("status") != "present":
+        return answer_text
+
+    pinned_url = pinned_source["url"]
+    negative_terms = tuple(pinned_source.get("negative_terms") or ())
+    cleaned_lines: list[str] = []
+    for line in answer_text.splitlines():
+        line_lower = line.lower()
+        if "support.optisigns.com/hc/en-us/articles/" in line and pinned_url not in line:
+            continue
+        if negative_terms and any(term in line_lower for term in negative_terms):
+            continue
+        cleaned_lines.append(line)
+
+    cleaned = "\n".join(line for line in cleaned_lines if line.strip()).strip()
+    if not cleaned:
+        return build_pinned_fallback(pinned_source)
+
+    if pinned_url not in cleaned:
+        cleaned = f"{cleaned}\n\nArticle URL: {pinned_url}"
+
+    return cleaned
+
+
+def format_answer(response: Any, question: str = "", pinned_source: dict | None = None) -> tuple[str, bool]:
     answer_text = extract_text(response)
     if not answer_text:
         answer_text = "No readable answer text was returned by the SDK."
 
-    article_urls = _extract_article_urls_from_text(answer_text)
-    if not article_urls:
+    article_urls = [pinned_source["url"]] if pinned_source else _extract_article_urls_from_text(answer_text)
+    if not article_urls and not pinned_source:
         article_urls = extract_grounding_urls(response)
     if not article_urls and question:
         article_urls = fallback_local_article_urls(question)
@@ -230,6 +257,7 @@ def format_answer(response: Any, question: str = "") -> tuple[str, bool]:
     if article_urls and "Article URL:" not in answer_text:
         answer_text = f"{answer_text}\n\n" + "\n".join(f"Article URL: {url}" for url in article_urls)
 
+    answer_text = guard_answer_with_pinned_source(answer_text, pinned_source)
     return answer_text, has_article_url
 
 
@@ -237,11 +265,11 @@ def main() -> None:
     load_dotenv()
     args = parse_args()
     question = " ".join(args.question).strip() or DEFAULT_QUESTION
-    retrieval_hint = youtube_sample_retrieval_hint(question)
+    pinned_source = load_pinned_markdown(question, LOCAL_ARTICLES_DIR)
 
     try:
-        response = ask_question(question, retrieval_hint=retrieval_hint)
-        answer_text, _ = format_answer(response, question)
+        response = ask_question(question, pinned_source=pinned_source)
+        answer_text, _ = format_answer(response, question, pinned_source=pinned_source)
     except Exception as exc:
         print(f"Question: {question}")
         print()
